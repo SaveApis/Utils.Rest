@@ -1,0 +1,66 @@
+﻿name: CI
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - '.github/workflows/ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: read
+      statuses: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: '0'
+      - name: Super-Linter
+        uses: super-linter/super-linter@v8.1.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VALIDATE_ALL_CODEBASE: false
+          VALIDATE_CSHARP: true
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_GITLEAKS: true
+  csharp:
+    name: C#
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4.3.1
+        with:
+          dotnet-version: '9.0.x'
+      - name: Cache
+        uses: actions/cache@v4.2.4
+        id: cache
+        with:
+          path: |
+            ~/.nuget/packages
+            src/**/obj
+          key: dotnet-${{ hashFiles('src/**/*.csproj') }}
+          restore-keys: dotnet-
+      - name: Setup GitHub Nuget Feed
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: dotnet nuget add source https://nuget.pkg.github.com/SaveApis/index.json --username ${{ github.actor }} --password ${{ github.token }} --store-password-in-clear-text --name GitHub
+      - name: Restore
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: dotnet restore src/Utils.Rest/Utils.Rest.csproj
+      - name: Build
+        run: dotnet build --no-restore --nologo --configuration Release src/Utils.Rest/Utils.Rest.csproj
+      - name: Publish
+        run: dotnet publish --no-build --nologo --no-restore --configuration Release --output ./out src/Utils.Rest/Utils.Rest.csproj

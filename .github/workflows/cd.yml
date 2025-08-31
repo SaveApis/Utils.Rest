@@ -1,0 +1,43 @@
+﻿name: CD
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - CHANGELOG.md
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4.3.1
+        with:
+          dotnet-version: '9.0.x'
+      - name: Cache
+        uses: actions/cache@v4.2.4
+        id: cache
+        with:
+          path: |
+            ~/.nuget/packages
+            src/**/obj
+          key: dotnet-${{ hashFiles('src/**/*.csproj') }}
+          restore-keys: dotnet-
+      - name: Setup GitHub Nuget Feed
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: dotnet nuget add source https://nuget.pkg.github.com/SaveApis/index.json --username ${{ github.actor }} --password ${{ github.token }} --store-password-in-clear-text --name GitHub
+      - name: Restore
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: dotnet restore src/Utils.Rest/Utils.Rest.csproj
+      - name: Build
+        run: dotnet build --no-restore --nologo --configuration Release src/Utils.Rest/Utils.Rest.csproj
+      - name: Pack
+        run: dotnet pack --output out/ --no-build --include-symbols --include-source --nologo --no-restore --configuration Release
+      - name: Deploy
+        run: dotnet nuget push out/*.nupkg --source https://nuget.pkg.github.com/SaveApis/index.json --api-key ${{ github.token }} --skip-duplicate
